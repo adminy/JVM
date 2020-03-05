@@ -1,0 +1,13 @@
+{
+  "name": "jvm",
+  "version": "0.0.1",
+  "scripts": {
+    "test": "jest --collectCoverage"
+  },
+  "dependencies": {
+    "adm-zip": ">=0.4.11"
+  },
+  "devDependencies": {
+    "jest": "^25.1.0"
+  }
+}

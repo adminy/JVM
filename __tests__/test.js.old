@@ -1,0 +1,32 @@
+const test = require('tape')
+const JVM = require('../libs/jvm.js')
+
+const codeDir = __dirname + '/_test'
+require('child_process')
+    .execSync(`javac ${codeDir}/Object.java ${codeDir}/Main.java ${codeDir}/Nested.java`)
+
+const jvm = new JVM()
+jvm.loadClassFiles(codeDir)
+jvm.CLASSES.clinit()
+
+test('Object', t => {
+    const o1 = jvm.CLASSES.newObject('Object')
+    const o2 = jvm.CLASSES.newObject('Object')
+    t.equal(o1, o1, 'should return true for same instance')
+    t.notEqual(o1, o2, 'should return false for different instances')
+    t.equal(o1.getClassName(), 'Object', 'getClass should return correct class object')
+    t.equal(o1.toString(), `Object@${o1.hashCode().toString(16)}`, 'toString should return correct class object')
+    t.equal(typeof o1.hashCode(), 'number', 'Object hashcode should return a number')
+    t.true(o1.hashCode() > 0, 'Object hashcode should be greater than 0')
+    t.notEqual(o1.hashCode(), o2.hashCode(), 'Object should be different for different instances')
+    t.end()
+})
+test('Static', t => {
+    const nested = jvm.CLASSES.getStaticField('_test/Main', 'o')
+    t.plan(2)
+    nested.getNumber.run([nested], number => t.equal(number, 1, 'should return true for default number'))
+    nested.setNumber.run([nested, 1000], () => {
+        nested.getNumber.run([nested], number => t.equal(number, 1000, 'should return true for custom number'))
+    })
+})
+

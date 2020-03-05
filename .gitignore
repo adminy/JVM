@@ -1,0 +1,6 @@
+node_modules/
+test/*.class
+coverage/
+**/.DS_Store
+examples/
+__tests__/test/*.class
