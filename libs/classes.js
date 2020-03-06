@@ -4,22 +4,21 @@ var Frame = require("./frame.js");
 
 var ACCESS_FLAGS = require("./classfile/accessflags.js");
 module.exports = function() {
+    this.type = 'class'
     paths = [ __dirname ]
     classes = {}
     staticFields = {}
     this.addPath = path => paths.indexOf(path) === -1 && paths.push(path)
-    this.clinit = function() {
+    this.clinit = () => {
         for(var className in classes) {
-            classArea = classes[className];
-            var clinit = this.getStaticMethod(className, "<clinit>", "()V");
-            if (clinit instanceof Frame) {
-                SCHEDULER.sync(function() {
-                    LOG.debug("call " + className + ".<clinit> ...");
-                    clinit.run([], function() {
-                        LOG.debug("call " + className + ".<clinit> ... done");
-                    });
-                });
-            }
+            classArea = classes[className]
+            const clinit = this.getStaticMethod(className, "<clinit>", "()V")
+            if (clinit && clinit.type == 'frame') {
+                // SCHEDULER.sync(() =>
+                LOG.debug("call " + className + ".<clinit> ...")
+                clinit.run([])
+                LOG.debug("call " + className + ".<clinit> ... done")
+            } else console.log('>>> Dynamic class: ',className)
         }
     }
     this.loadClassBytes = bytes => {
@@ -79,12 +78,12 @@ module.exports = function() {
     this.getEntryPoint = (className, methodName) => {
         for(const name in classes) {
             const _class = classes[name]
-            if (_class instanceof ClassArea) {
+            if (_class.type == 'classArea') {
                 if (!className || (className === _class.getClassName())) {
                     if (ACCESS_FLAGS.isPublic(_class.getAccessFlags())) {
                         const cp = _class.getConstantPool()
                         for(const method of _class.getMethods()) {
-                            if(ACCESS_FLAGS.isPublic(method.access_flags) && ACCESS_FLAGS.isStatic(method.access_flags) && cp[method.name_index].bytes === methodName) return new Frame(_class, method)
+                            if(ACCESS_FLAGS.isPublic(method.access_flags) && ACCESS_FLAGS.isStatic(method.access_flags) && cp[method.name_index].bytes === methodName) return Frame(_class, method)
                         }
                     }
                 }
@@ -104,16 +103,17 @@ module.exports = function() {
         throw new Error(`Implementation of the ${className} class is not found.`)
     }
     this.getStaticField = (className, fieldName) => staticFields[className + '.' + fieldName]
+
     this.setStaticField = (className, fieldName, value) => staticFields[className + '.' + fieldName] = value
     this.getStaticMethod = function(className, methodName, signature) {
         const _class = this.getClass(className)
-        if (_class instanceof ClassArea) {
+        if (_class.type == 'classArea') {
             const cp = _class.getConstantPool()
             for(const method of _class.getMethods()) 
                 if (ACCESS_FLAGS.isStatic(method.access_flags)) 
                     if (cp[method.name_index].bytes === methodName)
                         if (signature.toString() === cp[method.signature_index].bytes)
-                            return new Frame(_class, method)
+                            return Frame(_class, method)
         } else {
             if (methodName in _class) return _class[methodName]
         }
@@ -122,14 +122,14 @@ module.exports = function() {
         
     this.getMethod = function(className, methodName, signature) {
         var _class = this.getClass(className);
-        if (_class instanceof ClassArea) {
+        if (_class.type == 'classArea') {
             var methods = _class.getMethods();
             var cp = _class.getConstantPool();
             for(var i=0; i<methods.length; i++)
                 if (!ACCESS_FLAGS.isStatic(methods[i].access_flags)) 
                     if (cp[methods[i].name_index].bytes === methodName) 
                         if (signature.toString() === cp[methods[i].signature_index].bytes) 
-                            return new Frame(_class, methods[i]);
+                            return Frame(_class, methods[i]);
         } else {
             var o = new _class();
             if (methodName in o) {
@@ -141,7 +141,7 @@ module.exports = function() {
         
     this.newObject = function(className) {
         var _class = this.getClass(className)
-        if (_class instanceof ClassArea) {
+        if (_class.type == 'classArea') {
             
             var ctor = function() {};
             ctor.prototype = this.newObject(_class.getSuperClassName());
@@ -154,7 +154,7 @@ module.exports = function() {
             })
             _class.getMethods().forEach(function(method) {
                 const methodName = cp[method.name_index].bytes
-                o[methodName] = new Frame(_class, method)
+                o[methodName] = Frame(_class, method)
             })
             return o
         } else {

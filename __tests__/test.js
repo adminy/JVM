@@ -20,12 +20,13 @@ describe('Object', () => {
 })
 describe('Static', () => {
     const nested = jvm.CLASSES.getStaticField('_test/Main', 'o')
-    nested.getNumber.run([nested], number => {
-        it('should return true for default number', () => expect(number).toBe(1))
-    })
-    nested.setNumber.run([nested, 1000], () => {
-        nested.getNumber.run([nested], number => {
-            it('should return true for custom number', () => expect(number).toBe(1000))
-        })
-    })
+    console.log('>>>>>', jvm.CLASSES.getClass('_test/Main') )
+//     nested.getNumber.run([nested], number => {
+//         it('should return true for default number', () => expect(number).toBe(1))
+//     })
+//     nested.setNumber.run([nested, 1000], () => {
+//         nested.getNumber.run([nested], number => {
+//             it('should return true for custom number', () => expect(number).toBe(1000))
+//         })
+//     })
 })

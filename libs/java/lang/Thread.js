@@ -10,7 +10,7 @@ var Thread = require("./../../thread.js");
 
 var AThread = module.exports = function() {
     if (this instanceof AThread) {
-        this.thread = new Thread();
+        this.thread = Thread()
     } else {
         return new AThread();
     }
@@ -44,16 +44,14 @@ AThread.prototype.getPriority = function() {
 }
 
 AThread.prototype["start"] = function() {
-    var self = this;
-    var pid = THREADS.add(this.thread);
-    if (this._instance["run"] instanceof Frame) {
-        this._instance["run"].setPid(pid);
-        this._instance["run"].run([this._instance], function() {
-            THREADS.remove(pid);
-        });
+    const pid = THREADS.add(this.thread);
+    if (this._instance["run"].type == 'frame') {
+        this._instance["run"].pid = pid
+        this._instance["run"].run([this._instance])
+        THREADS.remove(pid)
     } else {
-        self._instance["run"]();
-        THREADS.remove(pid);
+        this._instance["run"]()
+        THREADS.remove(pid)
     }
 };
 

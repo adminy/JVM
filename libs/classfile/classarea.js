@@ -1,53 +1,6 @@
-var Reader = require("../util/reader.js"),
-    TAGS = require("./tags.js")
-
-var ClassArea = module.exports = function(classBytes) {
-    if (this instanceof ClassArea) {
-        this.classImage = getClassImage(classBytes);
-    } else {
-        return new ClassArea(classBytes);
-    }
-}
-
-ClassArea.prototype.getClassName = function() {    
-    return this.classImage.constant_pool[this.classImage.constant_pool[this.classImage.this_class].name_index].bytes;    
-}
-
-ClassArea.prototype.getSuperClassName = function() {    
-    return this.classImage.constant_pool[this.classImage.constant_pool[this.classImage.super_class].name_index].bytes;    
-}
-
-ClassArea.prototype.getAccessFlags = function() {
-    return this.classImage.access_flags;    
-}
-
-ClassArea.prototype.getConstantPool = function() {
-    return this.classImage.constant_pool;
-}
-
-ClassArea.prototype.getFields = function() {
-    return this.classImage.fields;
-}
-
-ClassArea.prototype.getMethods = function() {
-    return this.classImage.methods;
-}
-
-ClassArea.prototype.getClasses = function() {
-    var self = this;
-    var classes = [];
-    this.classImage.attributes.forEach(function(a) {
-        if (a.info.type === 'InnerClasses') {
-            a.info.classes.forEach(function(c) {
-                classes.push(self.classImage.constant_pool[self.classImage.constant_pool[c.inner_class_info_index].name_index].bytes);
-                classes.push(self.classImage.constant_pool[self.classImage.constant_pool[c.outer_class_info_index].name_index].bytes);
-            });
-        }
-    });
-    return classes;
-}
-
-var getClassImage = function(classBytes) {
+const Reader = require("../util/reader.js")
+const TAGS = require("./tags.js")
+const getClassImage = function(classBytes) {
 
     var classImage = {};
         
@@ -286,6 +239,29 @@ var getClassImage = function(classBytes) {
     }
     
     return classImage;
- 
-};
+    
+}
+module.exports = function(classBytes) {
+    this.type = 'classArea'
+    this.classImage = getClassImage(classBytes)
+
+    this.getClassName = () => this.classImage.constant_pool[this.classImage.constant_pool[this.classImage.this_class].name_index].bytes
+    this.getSuperClassName = () => this.classImage.constant_pool[this.classImage.constant_pool[this.classImage.super_class].name_index].bytes
+    this.getAccessFlags = () => this.classImage.access_flags
+    this.getConstantPool = () => this.classImage.constant_pool
+    this.getFields = () => this.classImage.fields
+    this.getMethods = () => this.classImage.methods
+    this.getClasses = () => {
+        const classes = []
+        this.classImage.attributes.filter(a => a.info.type === 'InnerClasses').forEach(a => a.info.classes.forEach(c => {
+            classes.push(this.classImage.constant_pool[this.classImage.constant_pool[c.inner_class_info_index].name_index].bytes)
+            classes.push(this.classImage.constant_pool[this.classImage.constant_pool[c.outer_class_info_index].name_index].bytes)
+        }))
+        return classes
+    }
+}
+
+
+
+
 

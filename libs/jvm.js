@@ -4,7 +4,6 @@ var globalizer = require("./util/globalizer");
 
 var Classes = require("./classes");
 var Threads = require("./threads");
-var Scheduler = require("./scheduler");
 var Logger = require("./logger");
 
 var OPCODES = require("./opcodes");
@@ -15,14 +14,12 @@ var JVM = module.exports = function() {
     this.LOG = new Logger()
     this.CLASSES = new Classes()
     this.THREADS = Threads()
-    this.SCHEDULER = Scheduler()
     globalizer.add("LOG", this.LOG);
     globalizer.add("CLASSES", this.CLASSES)
     globalizer.add("THREADS", this.THREADS)
-    globalizer.add("SCHEDULER", this.SCHEDULER)
     globalizer.add("OPCODES", OPCODES)
     
-    THREADS.add(new Thread("main"))
+    THREADS.add(Thread("main"))
     
     this.entryPoint = {
         className: null,
@@ -74,28 +71,10 @@ JVM.prototype.onExit = function(cb) {
     this._onExitCallback = cb
 }
 JVM.prototype.run = function() {
-    var self = this;
-    
     CLASSES.clinit();
     
     var entryPoint = CLASSES.getEntryPoint(this.entryPoint.className, this.entryPoint.methodName);
-    if (!entryPoint) {
-        throw new Error("Entry point method is not found.");
-    }
-    
-    entryPoint.run(arguments, function(code) {
-        var exit = function() {
-            self.SCHEDULER.tick(0, function() {
-                if (THREADS.count() === 1) {
-                    THREADS.remove(0);
-                    // self.emit("exit", code);
-                    this._onExitCallback(code)
-                } else {
-                    exit();
-                }
-            });
-        };
-        exit();
-    });
+    if (!entryPoint) throw new Error("Entry point method is not found.")
+    entryPoint.run(arguments, code => (THREADS.count() === 1) ? THREADS.remove(0) : this._onExitCallback(code))
 }
 

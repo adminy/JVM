@@ -3,4 +3,5 @@ test/*.class
 coverage/
 **/.DS_Store
 examples/
-__tests__/test/*.class
+__tests__/_test/*.class
+.DS_Store

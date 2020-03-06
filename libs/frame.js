@@ -1,1713 +1,537 @@
-var Numeric = require("./util/numeric");
-var Signature = require("./classfile/signature");
-
-var TAGS = require("./classfile/tags")
-
-var Frame = module.exports = function(classArea, method) {
-    pid = 0 // default main thread
-    this._cp = classArea.getConstantPool()
-    locals = null
-    for(var i=0; i<method.attributes.length; i++) {
-        if (method.attributes[i].info.type === 'Code') {
-            this._code = method.attributes[i].info.code;
-            this._exception_table = method.attributes[i].info.exception_table;
-            locals = Array(method.attributes[i].info.max_locals)
-            break;
-        }
-    }
-
-    this.setPid = processId => pid = processId
-    this._read8 = () => this._code[this._ip++]
-    this._read16 = () => this._read8()<<8 | this._read8()
-    this._read32 = () => this._read16()<<16 | this._read16()
-    this._throw = function(ex) { 
-        var handler_pc = null;
-    
-        for(var i=0; i<this._exception_table.length; i++) {
-            if (this._ip >= this._exception_table[i].start_pc && this._ip <= this._exception_table[i].end_pc) {
-                if (this._exception_table[i].catch_type === 0) {
-                    handler_pc = this._exception_table[i].handler_pc;             
-                } else {
-                    var name = this._cp[this._cp[this._exception_table[i].catch_type].name_index].bytes;
-                    if (name === ex.getClassName()) {
-                        handler_pc = this._exception_table[i].handler_pc;
-                        break;
-                    }
-                }
-            }
-        }
+const INSTRUCTIONS = {
+    nop:  () => {},
+    aconst_null: o => o.stack.push(null),
+    iconst_m1: o => o.stack.push(-1),
+    iconst_0: o => o.stack.push(0),
+    lconst_0: o => o.stack.push(0),
+    fconst_0: o => o.stack.push(0),
+    dconst_0: o => o.stack.push(0),
+    iconst_1: o => o.stack.push(1),
+    lconst_1: o => o.stack.push(1),
+    fconst_1: o => o.stack.push(1),
+    dconst_1: o => o.stack.push(1),
+    iconst_2: o => o.stack.push(2),
+    fconst_2: o => o.stack.push(2),
+    iconst_3: o => o.stack.push(3),
+    iconst_4: o => o.stack.push(4),
+    iconst_5: o => o.stack.push(5),
+    sipush: o => o.stack.push(o.read16()),
+    bipush: o => o.stack.push(o.read8()),
+    ldc: o => o.stack.push(o.constPool[o.constPool[o.read8()].string_index].bytes), //o.constPool[o.read8()].tag == o.TAGS['String']
+    ldc_w: o => o.stack.push(o.constPool[o.constPool[o.read16()].string_index].bytes), //o.constPool[o.read16()].tag == o.TAGS['String']
+    ldc2_w: o => (constant => ({ //constant.tag == o.TAGS['String', 'Long', 'Double']
+        [o.TAGS.get('String')]: constant => o.stack.push(o.constPool[constant.string_index].bytes),
+        [o.TAGS.get('Long')]: constant => o.stack.push(Numeric.getLong(constant.bytes)),
+        [o.TAGS.get('Double')]: constant => o.stack.push(constant.bytes.readDoubleBE(0)),
+    })[constant.tag](constant))(o.constPool[o.read16()]),
+    iload_0: o => o.stack.push(o.locals[0]),
+    lload_0: o => o.stack.push(o.locals[0]),
+    fload_0: o => o.stack.push(o.locals[0]),
+    dload_0: o => o.stack.push(o.locals[0]),
+    aload_0: o => o.stack.push(o.locals[0]),
+    iload_1: o => o.stack.push(o.locals[1]),
+    lload_1: o => o.stack.push(o.locals[1]),
+    fload_1: o => o.stack.push(o.locals[1]),
+    dload_1: o => o.stack.push(o.locals[1]),
+    aload_1: o => o.stack.push(o.locals[1]),
+    iload_2: o => o.stack.push(o.locals[2]),
+    lload_2: o => o.stack.push(o.locals[2]),
+    fload_2: o => o.stack.push(o.locals[2]),
+    dload_2: o => o.stack.push(o.locals[2]),
+    aload_2: o => o.stack.push(o.locals[2]),
+    iload_3: o => o.stack.push(o.locals[3]),
+    lload_3: o => o.stack.push(o.locals[3]),
+    fload_3: o => o.stack.push(o.locals[3]),
+    dload_3: o => o.stack.push(o.locals[3]),
+    aload_3: o => o.stack.push(o.locals[3]),
+    istore_0: o => o.locals[0] = o.stack.pop(),
+    lstore_0: o => o.locals[0] = o.stack.pop(),
+    fstore_0: o => o.locals[0] = o.stack.pop(),
+    dstore_0: o => o.locals[0] = o.stack.pop(),
+    astore_0: o => o.locals[0] = o.stack.pop(),
+    istore_1: o => o.locals[1] = o.stack.pop(),
+    lstore_1: o => o.locals[1] = o.stack.pop(),
+    fstore_1: o => o.locals[1] = o.stack.pop(),
+    dstore_1: o => o.locals[1] = o.stack.pop(),
+    astore_1: o => o.locals[1] = o.stack.pop(),
+    istore_2: o => o.locals[2] = o.stack.pop(),
+    lstore_2: o => o.locals[2] = o.stack.pop(),
+    fstore_2: o => o.locals[2] = o.stack.pop(),
+    dstore_2: o => o.locals[2] = o.stack.pop(),
+    astore_2: o => o.locals[2] = o.stack.pop(),
+    istore_3: o => o.locals[3] = o.stack.pop(),
+    lstore_3: o => o.locals[3] = o.stack.pop(),
+    fstore_3: o => o.locals[3] = o.stack.pop(),
+    dstore_3: o => o.locals[3] = o.stack.pop(),
+    astore_3: o => o.locals[3] = o.stack.pop(),
+    pop: o => o.stack.pop(),
+    pop2: o => o.stack.pop(),
+    iadd: o => o.stack.push(o.stack.pop() + o.stack.pop()),
+    ladd: o => o.stack.push(o.stack.pop() + o.stack.pop()),
+    dadd: o => o.stack.push(o.stack.pop() + o.stack.pop()),
+    fadd: o => o.stack.push(o.stack.pop() + o.stack.pop()),
+    isub: o => o.stack.push(- o.stack.pop() + o.stack.pop()),
+    lsub: o => o.stack.push(- o.stack.pop() + o.stack.pop()),
+    dsub: o => o.stack.push(- o.stack.pop() + o.stack.pop()),
+    fsub: o => o.stack.push(- o.stack.pop() + o.stack.pop()),
+    imul: o => o.stack.push(o.stack.pop() * o.stack.pop()),
+    lmul: o => o.stack.push(o.stack.pop() * o.stack.pop()),
+    dmul: o => o.stack.push(o.stack.pop() * o.stack.pop()),
+    fmul: o => o.stack.push(o.stack.pop() * o.stack.pop()),
+    dup: o => {
+        const val = o.stack.pop()
+        o.stack.push(val)
+        o.stack.push(val)
+    },
+    dup_x1: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        o.stack.push(val1)
+        o.stack.push(val2)
+        o.stack.push(val1)
+    },
+    dup_x2: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        const val3 = o.stack.pop()
+        o.stack.push(val1)
+        o.stack.push(val3)
+        o.stack.push(val2)    
+        o.stack.push(val1)
+    },
+    dup2: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        o.stack.push(val2)
+        o.stack.push(val1)
+        o.stack.push(val2)
+        o.stack.push(val1)
+    },
+    dup2_x1: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        const val3 = o.stack.pop()
+        o.stack.push(val2)
+        o.stack.push(val1)
+        o.stack.push(val3)
+        o.stack.push(val2)
+        o.stack.push(val1)
+    },
+    dup2_x2: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        const val3 = o.stack.pop()
+        const val4 = o.stack.pop()
+        o.stack.push(val2)
+        o.stack.push(val1)
+        o.stack.push(val4)
+        o.stack.push(val3)
+        o.stack.push(val2)
+        o.stack.push(val1)
+    },
+    swap: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        o.stack.push(val1)
+        o.stack.push(val2)
+    },
+    iinc: o => {
+        const idx = o.widened ? o.read16() : o.read8()
+        const val = o.widened ? o.read16() : o.read8()
+        o.locals[idx] += val
+        o.widened = false
+    },
+    ineg: o => o.stack.push(-o.stack.pop()),
+    lneg: o => o.stack.push(-o.stack.pop()),
+    dneg: o => o.stack.push(-o.stack.pop()),
+    fneg: o => o.stack.push(-o.stack.pop()),
+    iand:  o => o.stack.push(o.stack.pop() & o.stack.pop()),
+    land:  o => o.stack.push(o.stack.pop() & o.stack.pop()),
+    ior:  o => o.stack.push(o.stack.pop() | o.stack.pop()),
+    lor: o => o.stack.push(o.stack.pop() | o.stack.pop()),
+    ixor: o => o.stack.push(o.stack.pop() ^ o.stack.pop()),
+    lxor: o => o.stack.push(o.stack.pop() ^ o.stack.pop()),
+    lcmp: o => {
+        const val1 = o.stack.pop()
+        const val2 = o.stack.pop()
+        o.stack.push(val2 > val1 ? 1 : ((val2 < val1) ? -1 : 0))
+    },
+    newarray: o => {
+        const type = o.read8()
+        const size = o.stack.pop()
+        size < 0 ? o.throw(CLASSES.newException('java/lang/NegativeSizeException')) : o.stack.push(Array(size))
+    },
+    anewarray: o => {
+        const idx = o.read16()
+        const className = o.constPool[o.constPool[idx].name_index].bytes
+        const size = o.stack.pop()
+        size < 0 ? o.throw(CLASSES.newException('java/lang/NegativeSizeException')) : o.stack.push(Array(size))
+    },
+    multianewarray: o => {
+        const type = o.constPool[o.constPool[o.read16()].name_index].bytes
+        const createMultiArray = lengths => lengths.length === 0 ? null : Array(lengths.shift()).fill(0).map(_ => createMultiArray(lengths))
+        o.stack.push(createMultiArray(Array(o.read8()).fill(0).map(_ => o.stack.pop())))
+    },
+    arraylength: o => o.stack.push(o.stack.pop().length),
+    if_icmpeq: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        const ref1 = o.stack.pop()
+        const ref2 = o.stack.pop()
+        o.ip = ref1 === ref2 ? jmp : o.ip
+    },
+    if_icmpne: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        const ref1 = o.stack.pop()
+        const ref2 = o.stack.pop()
+        o.ip = ref1 !== ref2 ? jmp : o.ip
+    },
+    if_icmpgt: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        const ref1 = o.stack.pop()
+        const ref2 = o.stack.pop()
+        o.ip = ref1 < ref2 ? jmp : o.ip
+    },
+    if_icmple: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() >= o.stack.pop() ? jmp : o.ip
+    },
+    if_icmplt: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() > o.stack.pop() ? jmp : o.ip
+    },
+    if_icmpge: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() <= o.stack.pop() ? jmp : o.ip
+    },
+    if_acmpeq: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() === o.stack.pop() ? jmp : o.ip
+    },
+    if_acmpne: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() !== o.stack.pop() ? jmp : o.ip
+    },
+    ifne: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() !== 0 ? jmp : o.ip
+    },
+    ifeq: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() === 0 ? jmp : o.ip
+    },
+    iflt: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() < 0 ? jmp : o.ip
+    },
+    ifge: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() >= 0 ? jmp : o.ip
+    },
+    ifgt: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() > 0 ? jmp : o.ip
+    },
+    ifle: o => {
+        const jmp = o.ip - 1 + o.Numeric.getInt(o.read16())
+        o.ip = o.stack.pop() <= 0 ? jmp : o.ip
+    },
+    i2l: () => {},
+    i2f: () => {},
+    i2d: () => {},
+    i2b: () => {},
+    i2c: () => {},
+    i2s: () => {},
+    l2i: () => {},
+    l2d: () => {},
+    l2f: () => {},
+    d2i: () => {},
+    d2l: () => {},
+    d2f: () => {},
+    f2d: () => {},
+    f2i: () => {},
+    f2l: () => {},
+    goto: o => o.ip += o.Numeric.getInt(o.read16()) - 1,
+    goto_w: o => o.ip += o.Numeric.getInt(o.read32()) - 1,
+    ifnull: o => !o.stack.pop() && (o.ip += o.Numeric.getInt(o.read16()) - 1),
+    ifnonnull: o => !!o.stack.pop() && (o.ip += o.Numeric.getInt(o.read16()) - 1),
+    putfield: o => {
+        const idx = o.read16()
+        const fieldName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        const val = o.stack.pop()
+        const obj = o.stack.pop()
+        !obj ? o.throw(o.CLASSES.newException("java/lang/NullPointerException")) : (obj[fieldName] = val)
+    },
+    getfield: o => {
+        const idx = o.read16()
+        const fieldName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        const obj = o.stack.pop()
+        !obj ? o.throw(o.CLASSES.newException("java/lang/NullPointerException")) : o.stack.push(obj[fieldName])
+    },
+    new: o => {
+        const idx = o.read16()
+        const className = o.constPool[o.constPool[idx].name_index].bytes
+        o.stack.push(o.CLASSES.newObject(className))
+    },
+    getstatic: o => {    
+        const idx = o.read16()
+        const className = o.constPool[o.constPool[o.constPool[idx].class_index].name_index].bytes
+        const fieldName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        o.stack.push(o.CLASSES.getStaticField(className, fieldName))
+    },
+    putstatic: o => {
+        const idx = o.read16()
+        const className = o.constPool[o.constPool[o.constPool[idx].class_index].name_index].bytes
+        const fieldName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        console.log('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        o.CLASSES.setStaticField(className, fieldName, o.stack.pop())
+    },
+    invokestatic: o => { //TODO: come back and fix bugs?
+        const idx = o.read16()        
+        const className = o.constPool[o.constPool[o.constPool[idx].class_index].name_index].bytes
+        const methodName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        const signature = o.Signature.parse(o.constPool[o.constPool[o.constPool[idx].name_and_type_index].signature_index].bytes)
+        const args = []
+        for(const obj of signature.IN)
+            args.push(o.stack.pop()) && (!obj.isArray && ['long', 'double'].indexOf(obj.type) !== -1 ? args.push('') : 0)
         
-        if (handler_pc != null) {
-            this._stack.push(ex);
-            this._ip = handler_pc;      
+        const method = o.CLASSES.getStaticMethod(className, methodName, signature)
+        if(method && method.type == 'frame') {
+            method.pid = o.pid
+            const res = method.run(args)
+            signature.OUT.length != 0 && o.stack.push(res)
         } else {
-            throw ex;
+            const res = method.apply(null, args)
+            signature.OUT.length != 0 && o.stack.push(res)
         }
-    }
-
-    this.run = (args, done) => {        
-        this._ip = 0;
-        this._stack = [];
-        this._widened = false;
-        
-        for(var i=0; i<args.length; i++) {
-            locals[i] = args[i];
-        }
-        
-        var step = () => {
-            SCHEDULER.tick(pid, () => {
-                var opCode = this._read8()
-                
-                switch (opCode) {
-                    
-                    case OPCODES.return:
-                        return done();
-                        
-                    case OPCODES.ireturn:
-                    case OPCODES.lreturn:
-                    case OPCODES.freturn:
-                    case OPCODES.dreturn:
-                    case OPCODES.areturn:
-                        return done(this._stack.pop());
-                    
-                    default:
-                        const opName = OPCODES.toString(opCode)                    
-                        if (!(opName in this)) throw new Error(`Opcode ${opName} [${opCode}] is not supported.`)
-                        this[opName](step)
-                }
-            })   
-        }
-        
-        step();
-    }
-
-//================================================================================= instructions
-    this.nop = done => done()
-
-    this.aconst_null = done => {
-        this._stack.push(null);
-        return done();
-    }
-
-    this.iconst_m1 = done => {
-        this._stack.push(-1);
-        return done();
-    }
-
-    this.iconst_0 = this.lconst_0 = this.fconst_0 = this.dconst_0 = done => { this._stack.push(0); return done(); }
-
-    this.iconst_1 = this.lconst_1 = this.fconst_1 = this.dconst_1 = done => { this._stack.push(1); return done(); }
-
-    this.iconst_2 = this.fconst_2 = done => { this._stack.push(2); return done(); }
-
-    this.iconst_3 = done => { this._stack.push(3); return done(); }
-
-    this.iconst_4 = done => {
-        this._stack.push(4);
-        return done();
-    }
-
-    this.iconst_4 = done => {
-        this._stack.push(5);
-        return done();
-    }
-
-    this.iconst_5 = done => {
-        this._stack.push(5);
-        return done();
-    }
-
-    this.sipush = done => {
-        this._stack.push(this._read16());
-    }
-
-    this.bipush = done => {
-        this._stack.push(this._read8());
-        return done();
-    }
-
-    this.ldc = done => {
-        var constant = this._cp[this._read8()];
-        if(constant.tag == TAGS.get('String'))
-            this._stack.push(this._cp[constant.string_index].bytes);
-        else throw new Error('not support constant type')
-        return done()
-    }
-
-    this.ldc_w = done => {
-        var constant = this._cp[this._read16()];
-        if(constant.tag == TAGS.get('String')) this._stack.push(this._cp[constant.string_index].bytes);
-        else throw new Error('not support constant type')
-        return done()
-    }
-
-    this.ldc2_w = done => {
-        var constant = this._cp[this._read16()];
-        switch(constant.tag) {
-            case TAGS.get('String'):
-                this._stack.push(this._cp[constant.string_index].bytes)
-                break
-            case TAGS.get('Long'):
-                this._stack.push(Numeric.getLong(constant.bytes));
-                break
-            case TAGS.get('Double'):
-                this._stack.push(constant.bytes.readDoubleBE(0));
-                break
-            default:
-                throw new Error('not support constant type')
-        }
-        return done()
-    }
-
-    this.iload = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        this._stack.push(locals[idx]);
-        this._widened = false;
-        return done();
-    }
-
-    this.lload = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        this._stack.push(locals[idx]);
-        this._widened = false;
-        return done();
-    }
-
-    this.fload = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        this._stack.push(locals[idx]);
-        this._widened = false;
-        return done();
-    }
-
-    this.dload = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        this._stack.push(locals[idx]);
-        this._widened = false;
-        return done();
-    }
-
-    this.aload = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        this._stack.push(locals[idx]);
-        this._widened = false;
-        return done();
-    }
-
-    this.iload_0 = done => {
-        this._stack.push(locals[0]);
-        return done();
-    }
-
-    this.lload_0 = done => {
-        this._stack.push(locals[0]);
-        return done();
-    }
-
-    this.fload_0 = done => {
-        this._stack.push(locals[0]);
-        return done();
-    }
-
-    this.fload_0 = done => {
-        this._stack.push(locals[0]);
-        return done();
-    }
-
-    this.dload_0 = done => {
-        this._stack.push(locals[0]);
-        return done();
-    }
-
-    this.aload_0 = done => {
-        this._stack.push(locals[0]);
-        return done();
-    }
-
-    this.iload_1 = done => {
-        this._stack.push(locals[1]);
-        return done();
-    }
-
-    this.lload_1 = done => {
-        this._stack.push(locals[1]);
-        return done();
-    }
-
-    this.fload_1 = done => {
-        this._stack.push(locals[1]);
-        return done();
-    }
-
-    this.fload_1 = done => {
-        this._stack.push(locals[1]);
-        return done();
-    }
-
-    this.dload_1 = done => {
-        this._stack.push(locals[1]);
-        return done();
-    }
-
-    this.aload_1 = done => {
-        this._stack.push(locals[1]);
-        return done();
-    }
-
-    this.iload_2 = done => {
-        this._stack.push(locals[2]);
-        return done();
-    }
-
-    this.lload_2 = done => {
-        this._stack.push(locals[2]);
-        return done();
-    }
-
-    this.fload_2 = done => {
-        this._stack.push(locals[2]);
-        return done();
-    }
-
-    this.fload_2 = done => {
-        this._stack.push(locals[2]);
-        return done();
-    }
-
-    this.dload_2 = done => {
-        this._stack.push(locals[2]);
-        return done();
-    }
-
-    this.aload_2 = done => {
-        this._stack.push(locals[2]);
-        return done();
-    }
-
-    this.iload_3 = done => {
-        this._stack.push(locals[3]);
-        return done();
-    }
-
-    this.lload_3 = done => {
-        this._stack.push(locals[3]);
-        return done();
-    }
-
-    this.fload_3 = done => {
-        this._stack.push(locals[3]);
-        return done();
-    }
-
-    this.fload_3 = done => {
-        this._stack.push(locals[3]);
-        return done();
-    }
-
-    this.dload_3 = done => {
-        this._stack.push(locals[3]);
-        return done();
-    }
-
-    this.aload_3 = done => {
-        this._stack.push(locals[3]);
-        return done();
-    }
-
-    this.iaload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.laload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.faload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-
-    this.daload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.aaload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.baload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.caload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.saload = done => {
-        var idx = this._stack.pop();
-        var refArray = this._stack.pop();
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            this._stack.push(refArray[idx]);
-        }
-        
-        return done();
-    }
-
-    this.istore = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        locals[idx] = this._stack.pop();
-        this._widened = false;
-        return done();
-    }
-
-    this.lstore = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        locals[idx] = this._stack.pop();
-        this._widened = false;
-        return done();
-    }
-
-    this.fstore = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        locals[idx] = this._stack.pop();
-        this._widened = false;
-        return done();
-    }
-
-    this.dstore = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        locals[idx] = this._stack.pop();
-        this._widened = false;
-        return done();
-    }
-
-    this.astore = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        locals[idx] = this._stack.pop();
-        this._widened = false;
-        return done();
-    }
-
-    this.istore_0 = done => {
-        locals[0] = this._stack.pop();
-        return done();
-    }
-
-    this.lstore_0 = done => {
-        locals[0] = this._stack.pop();
-        return done();
-    }
-
-    this.fstore_0 = done => {
-        locals[0] = this._stack.pop();
-        return done();
-    }
-
-    this.dstore_0 = done => {
-        locals[0] = this._stack.pop();
-        return done();
-    }
-
-    this.astore_0 = done => {
-        locals[0] = this._stack.pop();
-        return done();
-    }
-
-    this.istore_1 = done => {
-        locals[1] = this._stack.pop();
-        return done();
-    }
-
-    this.lstore_1 = done => {
-        locals[1] = this._stack.pop();
-        return done();
-    }
-
-    this.fstore_1 = done => {
-        locals[1] = this._stack.pop();
-        return done();
-    }
-
-    this.dstore_1 = done => {
-        locals[1] = this._stack.pop();
-        return done();
-    }
-
-    this.astore_1 = done => {
-        locals[1] = this._stack.pop();
-        return done();
-    }
-
-
-    this.istore_2 = done => {
-        locals[2] = this._stack.pop();
-        return done();
-    }
-
-    this.lstore_2 = done => {
-        locals[2] = this._stack.pop();
-        return done();
-    }
-
-    this.fstore_2 = done => {
-        locals[2] = this._stack.pop();
-        return done();
-    }
-
-    this.dstore_2 = done => {
-        locals[2] = this._stack.pop();
-        return done();
-    }
-
-    this.astore_2 = done => {
-        locals[2] = this._stack.pop();
-        return done();
-    }
-
-    this.istore_3 = done => {
-        locals[3] = this._stack.pop();
-        return done();
-    }
-
-    this.lstore_3 = done => {
-        locals[3] = this._stack.pop();
-        return done();
-    }
-
-    this.fstore_3 = done => {
-        locals[3] = this._stack.pop();
-        return done();
-    }
-
-    this.dstore_3 = done => {
-        locals[3] = this._stack.pop();
-        return done();
-    }
-
-    this.astore_3 = done => {
-        locals[3] = this._stack.pop();
-        return done();
-    }
-
-    this.iastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.lastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.fastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.dastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.aastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.bastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.castore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.sastore = done => {
-        var val = this._stack.pop();
-        var idx = this._stack.pop();                
-        var refArray = this._stack.pop();
-        
-        
-        var ex = null;
-        
-        if (!refArray) {
-            ex = CLASSES.newException("java/lang/NullPointerException");
-        } else if (idx < 0 || idx >= refArray.length) {
-            ex = CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx);
-        }
-        
-        if (ex) {
-            this._throw(ex);
-        } else {
-            refArray[idx] = val;
-        }
-        
-        return done();
-    }
-
-    this.pop = done => {
-        this._stack.pop();
-        return done();
-    }
-
-    this.pop2 = done => {
-        this._stack.pop();
-        return done();
-    }
-
-    this.dup = done => {
-        var val = this._stack.pop();
-        this._stack.push(val);
-        this._stack.push(val);
-        return done();
-    }
-
-    this.dup_x1 = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val1);
-        this._stack.push(val2);
-        this._stack.push(val1);
-        return done();
-    }
-
-    this.dup_x2 = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        var val3 = this._stack.pop();    
-        this._stack.push(val1);
-        this._stack.push(val3);
-        this._stack.push(val2);    
-        this._stack.push(val1);
-        return done();
-    }
-
-    this.dup2 = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2);
-        this._stack.push(val1);
-        this._stack.push(val2);
-        this._stack.push(val1);
-        return done();
-    }
-
-    this.dup2_x1 = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        var val3 = this._stack.pop();
-        this._stack.push(val2);
-        this._stack.push(val1);
-        this._stack.push(val3);
-        this._stack.push(val2);
-        this._stack.push(val1);
-        return done();
-    }
-
-    this.dup2_x2 = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        var val3 = this._stack.pop();
-        var val4 = this._stack.pop();
-        this._stack.push(val2);
-        this._stack.push(val1);
-        this._stack.push(val4);
-        this._stack.push(val3);
-        this._stack.push(val2);
-        this._stack.push(val1);
-        return done();
-    }
-
-
-    this.swap = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val1);
-        this._stack.push(val2);
-        return done();
-    }
-
-
-    this.iinc = done => {
-        var idx = this._widened ? this._read16() : this._read8();
-        var val = this._widened ? this._read16() : this._read8();
-        locals[idx] += val
-        this._widened = false;
-        return done();
-    }
-
-    this.iadd = done => {
-        this._stack.push(this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.ladd = done => {
-        this._stack.push(this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.dadd = done => {
-        this._stack.push(this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.fadd = done => {
-        this._stack.push(this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.isub = done => {
-        this._stack.push(- this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.lsub = done => {
-        this._stack.push(- this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.dsub = done => {
-        this._stack.push(- this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.fsub = done => {
-        this._stack.push(- this._stack.pop() + this._stack.pop());
-        return done();
-    }
-
-    this.imul = done => {
-        this._stack.push(this._stack.pop() * this._stack.pop());
-        return done();
-    }
-
-    this.lmul = done => {
-        this._stack.push(this._stack.pop() * this._stack.pop());
-        return done();
-    }
-
-    this.dmul = done => {
-        this._stack.push(this._stack.pop() * this._stack.pop());
-        return done();
-    }
-
-    this.fmul = done => {
-        this._stack.push(this._stack.pop() * this._stack.pop());
-        return done();
-    }
-
-    this.idiv = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        if (val1 === 0) {
-            this._throw(CLASSES.newException("java/lang/ArithmeticException"));
-        } else {
-            this._stack.push(val2 / val1);
-        }
-        return done();
-    }
-
-    this.ldiv = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        if (val1 === 0) {
-            this._throw(CLASSES.newException("java/lang/ArithmeticException"));
-        } else {
-            this._stack.push(val2 / val1);
-        }
-        return done();
-    }
-
-    this.ddiv = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 / val1);
-        return done();
-    }
-
-    this.fdiv = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 / val1);
-        return done();
-    }
-
-    this.irem = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 % val1);
-        return done();
-    }
-
-    this.lrem = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 % val1);
-        return done();
-    }
-
-    this.drem = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 % val1);
-        return done();
-    }
-
-    this.frem = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 % val1);
-        return done();
-    }
-
-    this.ineg = done => {
-        this._stack.push(- this._stack.pop());
-        return done();
-    }
-
-    this.lneg = done => {
-        this._stack.push(- this._stack.pop());
-        return done();
-    }
-
-    this.dneg = done => {
-        this._stack.push(- this._stack.pop());
-        return done();
-    }
-
-    this.fneg = done => {
-        this._stack.push(- this._stack.pop());
-        return done();
-    }
-
-    this.ishl = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 << val1);
-        return done();
-    }
-
-    this.lshl = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 << val1);
-        return done();
-    }
-
-    this.ishr = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 >> val1);
-        return done();
-    }
-
-    this.lshr = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 >> val1);
-        return done();
-    }
-
-    this.iushr = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 >>> val1);
-        return done();
-    }
-
-    this.lushr = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        this._stack.push(val2 >>> val1);
-        return done();
-    }
-
-    this.iand = done => {
-        this._stack.push(this._stack.pop() & this._stack.pop());
-        return done();
-    }
-
-    this.land = done => {
-        this._stack.push(this._stack.pop() & this._stack.pop());
-        return done();
-    }
-
-    this.ior = done => {
-        this._stack.push(this._stack.pop() | this._stack.pop());
-        return done();
-    }
-
-    this.lor = done => {
-        this._stack.push(this._stack.pop() | this._stack.pop());
-        return done();
-    }
-
-    this.ixor = done => {
-        this._stack.push(this._stack.pop() ^ this._stack.pop());
-        return done();
-    }
-
-    this.lxor = done => {
-        this._stack.push(this._stack.pop() ^ this._stack.pop());
-        return done();
-    }
-
-    this.lcmp = done => {
-        var val1 = this._stack.pop();
-        var val2 = this._stack.pop();
-        if (val2 > val1) {
-            this._stack.push(1);
-        } else if (val2 < val1) {
-            this._stack.push(-1);
-        } else {
-            this._stack.push(0);
-        }
-        return done()
-    }
-
-    this.fcmpl = done => {
-        var val1 = this._stack.pop()
-        var val2 = this._stack.pop()
-        if (isNaN(val1) || isNaN(val2)) {
-            this._stack.push(-1)
-        } else if (val2 > val1) {
-            this._stack.push(1)
-        } else if (val2 < val1) {
-            this._stack.push(-1)
-        } else {
-            this._stack.push(0)
-        }
-        return done
-    }
-
-    this.fcmpg = done => {
-        var val1 = this._stack.pop()
-        var val2 = this._stack.pop()
-        if (isNaN(val1) || isNaN(val2)) {
-            this._stack.push(1)
-        } else if (val2 > val1) {
-            this._stack.push(1)
-        } else if (val2 < val1) {
-            this._stack.push(-1)
-        } else {
-            this._stack.push(0)
-        }    
-        return done
-    }
-
-    this.dcmpl = done => {
-        var val1 = this._stack.pop()
-        var val2 = this._stack.pop()
-        if (isNaN(val1) || isNaN(val2)) {
-            this._stack.push(-1)
-        } else if (val2 > val1) {
-            this._stack.push(1)
-        } else if (val2 < val1) {
-            this._stack.push(-1)
-        } else {
-            this._stack.push(0)
-        }    
-        return done
-    }
-
-    this.dcmpg = done => {
-        var val1 = this._stack.pop()
-        var val2 = this._stack.pop()
-        if (isNaN(val1) || isNaN(val2)) {
-            this._stack.push(1)
-        } else if (val2 > val1) {
-            this._stack.push(1)
-        } else if (val2 < val1) {
-            this._stack.push(-1)
-        } else {
-            this._stack.push(0)
-        }    
-        return done;
-    }
-
-
-    this.newarray = done => {
-        var type = this._read8();  
-        var size = this._stack.pop();
-        if (size < 0) {
-            this._throw(CLASSES.newException("java/lang/NegativeSizeException"));
-        } else {
-            this._stack.push(new Array(size));
-        }
-        return done();    
-    }
-
-
-    this.anewarray = done => {
-        var idx = this._read16();
-        var className = this._cp[this._cp[idx].name_index].bytes;       
-        var size = this._stack.pop();
-        if (size < 0) {
-            this._throw(CLASSES.newException("java/lang/NegativeSizeException"));
-        } else {
-            this._stack.push(new Array(size));
-        }
-        return done();
-    }
-
-    this.multianewarray = done => {
-        var idx = this._read16();
-        var type = this._cp[this._cp[idx].name_index].bytes;       
-        var dimensions = this._read8();
-        var lengths = new Array(dimensions);
-        for(var i=0; i<dimensions; i++) {
-            lengths[i] = this._stack.pop();
-        }
-        var createMultiArray = function(lengths) {
-            if (lengths.length === 0) {
-                return null;
-            }
-            var length = lengths.shift();
-            var array = new Array(length);
-            for (var i=0; i<length; i++) {
-                array[i] = createMultiArray(lengths);
-            }
-            return array;
-        };
-        this._stack.push(createMultiArray(lengths));    
-        return done();
-    }
-
-    this.arraylength = done => {
-        var ref = this._stack.pop();
-        this._stack.push(ref.length);
-        return done();
-    }
-
-    this.if_icmpeq = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());                                
-        var ref1 = this._stack.pop();
-        var ref2 = this._stack.pop();
-        this._ip = ref1 === ref2 ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_icmpne = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());                                
-        var ref1 = this._stack.pop();
-        var ref2 = this._stack.pop();
-        this._ip = ref1 !== ref2 ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_icmpgt = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());                                
-        var ref1 = this._stack.pop();
-        var ref2 = this._stack.pop();
-        this._ip = ref1 < ref2 ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_icmple = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() >= this._stack.pop() ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_icmplt = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() > this._stack.pop() ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_icmpge = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());                                
-        var ref1 = this._stack.pop();
-        var ref2 = this._stack.pop();
-        this._ip = ref1 <= ref2 ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_acmpeq = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());                                
-        var ref1 = this._stack.pop();
-        var ref2 = this._stack.pop();
-        this._ip = ref1 === ref2 ? jmp : this._ip;
-        return done();
-    }
-
-    this.if_acmpne = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());                                
-        var ref1 = this._stack.pop();
-        var ref2 = this._stack.pop();
-        this._ip = ref1 !== ref2 ? jmp : this._ip;
-        return done();
-    }
-
-    this.ifne = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() !== 0 ? jmp : this._ip;
-        return done();
-    }
-
-    this.ifeq = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() === 0 ? jmp : this._ip;
-        return done();
-    }
-
-    this.iflt = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() < 0 ? jmp : this._ip;
-        return done();
-    }
-
-    this.ifge = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() >= 0 ? jmp : this._ip;
-        return done();
-    }
-
-    this.ifgt = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() > 0 ? jmp : this._ip;
-        return done();
-    }
-
-    this.ifle = done => {
-        var jmp = this._ip - 1 + Numeric.getInt(this._read16());
-        this._ip = this._stack.pop() <= 0 ? jmp : this._ip;
-        return done();
-    }
-    this.i2l = done => done()
-    this.i2f = done => done()
-    this.i2d = done => done()
-    this.i2b = done => done()
-    this.i2c = done => done()
-    this.i2s = done => done()
-    this.l2i = done => done()
-    this.l2d = done => done()
-    this.l2f = done => done()
-    this.d2i = done => done()
-    this.d2l = done => done()
-    this.d2f = done => done()
-    this.f2d = done => done()
-    this.f2i = done => done()
-    this.f2l = done => done()
-
-    this.goto = done => {
-        this._ip += Numeric.getInt(this._read16()) - 1;
-        return done();
-    }
-
-    this.goto_w = done => {
-        this._ip += Numeric.getInt(this._read32()) - 1;
-        return done();
-    }
-
-    this.ifnull = done => {
-        var ref = this._stack.pop();
-        if (!ref) {
-            this._ip += Numeric.getInt(this._read16()) - 1;
-        }
-        return done();
-    }
-
-    this.ifnonnull = done => {
-        var ref = this._stack.pop();
-        if (!!ref) {
-            this._ip += Numeric.getInt(this._read16()) - 1;
-        }
-        return done();
-    }
-
-    this.putfield = done => {
-        var idx = this._read16();
-        var fieldName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;    
-        var val = this._stack.pop();
-        var obj = this._stack.pop();
-        if (!obj) {
-            this._throw(CLASSES.newException("java/lang/NullPointerException"));
-        } else {
-            obj[fieldName] = val;
-        }
-        return done();
-    }
-
-    this.getfield = done => {    
-        var idx = this._read16();
-        var fieldName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        var obj = this._stack.pop();
-        if (!obj) {
-            this._throw(CLASSES.newException("java/lang/NullPointerException"));
-        } else {
-            this._stack.push(obj[fieldName]);
-        }
-        return done();
-    }
-
-
-    this.new = done => {
-        var idx = this._read16();
-        var className = this._cp[this._cp[idx].name_index].bytes;    
-        this._stack.push(CLASSES.newObject(className));
-        return done();
-    }
-
-    this.getstatic = done => {    
-        var idx = this._read16();
-        var className = this._cp[this._cp[this._cp[idx].class_index].name_index].bytes;
-        var fieldName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        this._stack.push(CLASSES.getStaticField(className, fieldName));
-        return done();
-    }
-
-    this.putstatic = done => {
-        var idx = this._read16();
-        var className = this._cp[this._cp[this._cp[idx].class_index].name_index].bytes;
-        var fieldName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        CLASSES.setStaticField(className, fieldName, this._stack.pop());
-        return done();
-    }
-
-    this.invokestatic = done => {
-        var self = this;
-        
-        var idx = this._read16();
-        
-        var className = this._cp[this._cp[this._cp[idx].class_index].name_index].bytes;
-        var methodName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        var signature = Signature.parse(this._cp[this._cp[this._cp[idx].name_and_type_index].signature_index].bytes);
-        
-        var args = [];
-        for (var i=0; i<signature.IN.length; i++) {
-            if (!signature.IN[i].isArray && ["long", "double"].indexOf(signature.IN[i].type) !== -1) {
-                args.unshift("");
-                args.unshift(this._stack.pop());
-            } else {
-                args.unshift(this._stack.pop());
-            }
-        }
-        
-        var method = CLASSES.getStaticMethod(className, methodName, signature);
-        
-        if (method instanceof Frame) {
-            method.setPid(pid)
-            method.run(args, function(res) {
-                if (signature.OUT.length != 0) {                        
-                self._stack.push(res);
-                }
-                return done();
-            });
-        } else {
-            var res = method.apply(null, args);
-            if (signature.OUT.length != 0) {                        
-                self._stack.push(res);                        
-            }
-            return done();
-        }
-    }    
-
-
-    this.invokevirtual = done => {
-        var self = this;
-        
-        var idx = this._read16();
-        
-        var className = this._cp[this._cp[this._cp[idx].class_index].name_index].bytes;
-        var methodName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        var signature = Signature.parse(this._cp[this._cp[this._cp[idx].name_and_type_index].signature_index].bytes);
-        
-        var args = [];
-        for (var i=0; i<signature.IN.length; i++) {
-            if (!signature.IN[i].isArray && ["long", "double"].indexOf(signature.IN[i].type) !== -1) {
-                args.unshift("");
-                args.unshift(this._stack.pop());
-            } else {
-                args.unshift(this._stack.pop());
-            }
-        }
-
-        
-        var instance = this._stack.pop();
-        var method = CLASSES.getMethod(className, methodName, signature);
-        
-        if (method instanceof Frame) {
+    },
+    invokevirtual: o => {
+        const idx = o.read16()        
+        const className = o.constPool[o.constPool[o.constPool[idx].class_index].name_index].bytes
+        const methodName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        const signature = o.Signature.parse(o.constPool[o.constPool[o.constPool[idx].name_and_type_index].signature_index].bytes)
+        const args = []
+        for(const obj of signature.IN)
+            args.push(o.stack.pop()) && (!obj.isArray && ['long', 'double'].indexOf(obj.type) !== -1 ? args.push('') : 0)
+
+        const instance = o.stack.pop()
+        const method = o.CLASSES.getMethod(className, methodName, signature)
+        if(method && method.type == 'frame') {
             args.unshift(instance)
-            method.setPid(pid)
-            method.run(args, function(res) {
-                if (signature.OUT.length != 0) {                        
-                self._stack.push(res);
-                }
-                return done();            
-            });
+            method.pid = o.pid
+            const res = method.run(args)
+            signature.OUT.length != 0 && o.stack.push(res)
         } else {
-            var res = method.apply(instance, args);        
-            if (signature.OUT.length != 0) {
-                self._stack.push(res);
-            }
-            return done();
+            const res = method.apply(instance, args)
+            signature.OUT.length != 0 && o.stack.push(res)
         }
-    }
+    },
+    invokespecial: o => {
+        const idx = o.read16()        
+        const className = o.constPool[o.constPool[o.constPool[idx].class_index].name_index].bytes
+        const methodName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        const signature = o.Signature.parse(o.constPool[o.constPool[o.constPool[idx].name_and_type_index].signature_index].bytes)
+        const args = []
+        for(const obj of signature.IN)
+            args.push(o.stack.pop()) && (!obj.isArray && ['long', 'double'].indexOf(obj.type) !== -1 ? args.push('') : 0)
 
-    this.invokespecial = done => {
-        var self = this;
+        const instance = o.stack.pop()
+        const ctor = o.CLASSES.getMethod(className, methodName, signature)
         
-        var idx = this._read16();
+        if(ctor && ctor.type == 'frame') {
+            args.unshift(instance)
+            ctor.pid = o.pid
+            ctor.run(args)
+        } else ctor.apply(instance, args);
+    },
+    invokeinterface: o => {
+        const idx = o.read16()
+        const argsNumber = o.read8()
+        const zero = o.read8()
         
-        var className = this._cp[this._cp[this._cp[idx].class_index].name_index].bytes;
-        var methodName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        var signature = Signature.parse(this._cp[this._cp[this._cp[idx].name_and_type_index].signature_index].bytes);
+        const className = o.constPool[o.constPool[o.constPool[idx].class_index].name_index].bytes
+        const methodName = o.constPool[o.constPool[o.constPool[idx].name_and_type_index].name_index].bytes
+        const signature = Signature.parse(o.constPool[o.constPool[o.constPool[idx].name_and_type_index].signature_index].bytes)
         
-        var args = [];
-        for (var i=0; i<signature.IN.length; i++) {
-            if (!signature.IN[i].isArray && ["long", "double"].indexOf(signature.IN[i].type) !== -1) {
-                args.unshift("");
-                args.unshift(this._stack.pop());
-            } else {
-                args.unshift(this._stack.pop());
-            }
-        }
+        const args = []
+        for(const obj of signature.IN)
+            args.push(o.stack.pop()) && (!obj.isArray && ['long', 'double'].indexOf(obj.type) !== -1 ? args.push('') : 0)
 
-
-        var instance = this._stack.pop();
-        var ctor = CLASSES.getMethod(className, methodName, signature);
+        const instance = o.stack.pop()
         
-        if (ctor instanceof Frame) {
-            args.unshift(instance);
-            ctor.setPid(pid)
-            ctor.run(args, function() {
-                return done();
-            });
+        if(instance[methodName] && instance[methodName].type == 'frame') {
+            args.unshift(instance)
+            instance[methodName].pid = pid
+            const res = instance[methodName].run(args)
+            signature.OUT.length != 0 && o.stack.push(res)
         } else {
-            ctor.apply(instance, args);
-            return done();
+            const res = instance[methodName].apply(instance, args);
+            signature.OUT.length != 0 && o.stack.push(res)
         }
-        
-    }
-
-    this.invokeinterface = done => {
-        var self = this;
-        
-        var idx = this._read16();
-        var argsNumber = this._read8();
-        var zero = this._read8();
-        
-        var className = this._cp[this._cp[this._cp[idx].class_index].name_index].bytes;
-        var methodName = this._cp[this._cp[this._cp[idx].name_and_type_index].name_index].bytes;
-        var signature = Signature.parse(this._cp[this._cp[this._cp[idx].name_and_type_index].signature_index].bytes);
-        
-        var args = [];
-        for (var i=0; i<signature.IN.length; i++) {
-            if (!signature.IN[i].isArray && ["long", "double"].indexOf(signature.IN[i].type) !== -1) {
-                args.unshift("");
-                args.unshift(this._stack.pop());
-            } else {
-                args.unshift(this._stack.pop());
-            }
-        }
-
-
-        var instance = this._stack.pop();
-        
-        if (instance[methodName] instanceof Frame) {
-            args.unshift(instance);
-            instance[methodName].setPid(pid)
-            instance[methodName].run(args, function(res) {
-                if (signature.OUT.length != 0) {                        
-                self._stack.push(res);
-                }
-                return done();            
-            });
-        } else {
-            var res = instance[methodName].apply(instance, args);
-            if (signature.OUT.length != 0) {
-                self._stack.push(res);
-            }
-            return done();
-        }
-    }
-
-    this.jsr = done => {
-        var jmp = this._read16();
-        this._stack.push(this._ip);
-        this._ip = jmp;
-        return done();
-    }
-
-    this.jsr_w = done => {
-        var jmp = this._read32();
-        this._stack.push(this._ip);
-        this._ip = jmp;
-        return done();
-    }
-
-    this.ret = done => {   
-        var idx = this._widened ? this._read16() : this._read8();
-        this._ip = locals[idx]; 
-        this._widened = false;
-        return done();
-    }
-
-    this.tableswitch = done => {
-
-        var startip = this._ip;
-        var jmp;
-
-        while ((this._ip % 4) != 0) {
-            this._ip++;
-        }
-            
-        var def = this._read32();
-        var low = this._read32();
-        var high = this._read32();
-        var val = this._stack.pop();
-        
-        if (val < low || val > high) {
-            jmp = def;
-        } else {
-            this._ip  += (val - low) << 2;
-            jmp = this._read32();        
-        }    
-        
-        this._ip = startip - 1 + Numeric.getInt(jmp);
-        
-        return done();
-    }
-
-    this.lookupswitch = done => {
-
-        var startip = this._ip;
-
-        while ((this._ip % 4) != 0) {
-            this._ip++;
-        }
-            
-        var jmp = this._read32();
-        var size = this._read32();
-        var val = this._stack.pop();
-        
+    },
+    jsr: o => {
+        const jmp = o.read16()
+        o.stack.push(o.ip)
+        o.ip = jmp
+    },
+    jsr_w: o => {
+        const jmp = o.read32()
+        o.stack.push(o.ip)
+        o.ip = jmp
+    },
+    ret: o => {   
+        o.ip = o.locals[o.widened ? o.read16() : o.read8()]
+        o.widened = false
+    },
+    tableswitch: o => {
+        const startip = o.ip
+        while (( o.ip % 4) != 0) o.ip++
+        const def = o.read32()
+        const low = o.read32()
+        const high = o.read32()
+        const val = o.stack.pop()    
+        const jmp = (val < low || val > high) ? def : [o.ip  += (val - low) << 2, o.read32()][1]
+        o.ip = startip - 1 + o.Numeric.getInt(jmp)
+    },
+    lookupswitch: o => {
+        const startip = o.ip
+        while (( o.ip % 4) != 0) o.ip++
+        let jmp = o.read32()
+        const size = o.read32()
+        const val = o.stack.pop()
         lookup:
-            for(var i=0; i<size; i++) {
-                var key = this._read32();
-                var offset = this._read32();
-                if (key === val) {
-                    jmp = offset;
-                }
-                if (key >= val) {
-                    break lookup;    
-                }
+            for(let i = 0; i < size; i++) {
+                const key = o.read32()
+                const offset = o.read32()
+                if (key === val) jmp = offset
+                if (key >= val) break lookup    
             }
-        
-        this._ip = startip - 1 + Numeric.getInt(jmp);
-        
-        return done();
+        o.ip = startip - 1 + o.Numeric.getInt(jmp)
+    },
+    instanceof: o => {
+        const idx = o.read16()
+        const className = o.constPool[o.constPool[idx].name_index].bytes
+        const obj = o.stack.pop()
+        o.stack.push(obj.getClassName() === className)
+    },
+    checkcast: o => o.constPool[o.constPool[o.read16()].name_index].bytes, //type
+    athrow: o => o.throw(o.stack.pop()),
+    wide: o => o.widened = true,
+    monitorenter: o => {
+        const obj = stack.pop()
+        !obj ? o.throw(o.CLASSES.newException('java/lang/NullPointerException')) : 
+            (obj.hasOwnProperty("$lock$") ? o.stack.push(obj) && o.ip-- : (obj['$lock$'] = 'locked'))
+        // SCHEDULER.yield()
+    },
+    monitorexit: o => {
+        const obj = o.stack.pop()
+        !obj ? o.throw(CLASSES.newException("java/lang/NullPointerException")) : (delete obj["$lock$"])
+        // SCHEDULER.yield()
+    }
+}
+INSTRUCTIONS.iload = INSTRUCTIONS.lload = INSTRUCTIONS.fload = INSTRUCTIONS.dload = INSTRUCTIONS.aload = o =>
+    o.widened = !o.stack.push(o.locals[o.widened ? o.read16() : o.read8()])
+INSTRUCTIONS.iaload = INSTRUCTIONS.laload = INSTRUCTIONS.faload = INSTRUCTIONS.daload = INSTRUCTIONS.aaload =
+    INSTRUCTIONS.baload = INSTRUCTIONS.caload = INSTRUCTIONS.saload = o => {
+        const idx = o.stack.pop()
+        const refArray = o.stack.pop()
+        const ex = !refArray ? o.CLASSES.newException("java/lang/NullPointerException") : ((idx < 0 || idx >= refArray.length) ? o.CLASSES.newException('java/lang/ArrayIndexOutOfBoundsException', idx) : null)
+        ex ? o.throw(ex) : o.stack.push(refArray[idx])
+    }
+INSTRUCTIONS.istore = INSTRUCTIONS.lstore = INSTRUCTIONS.fstore = INSTRUCTIONS.dstore = INSTRUCTIONS.astore = o =>
+    o.locals[o.widened ? o.read16() : o.read8()] = o.stack.pop(o.widened = false)
+
+INSTRUCTIONS.iastore = INSTRUCTIONS.lastore = INSTRUCTIONS.fastore = INSTRUCTIONS.dastore = INSTRUCTIONS.aastore =
+    INSTRUCTIONS.bastore = INSTRUCTIONS.castore = INSTRUCTIONS.sastore = o => {
+        const val = o.stack.pop()
+        const idx = o.stack.pop()
+        const refArray = o.stack.pop()
+        const ex = !refArray ? CLASSES.newException('java/lang/NullPointerException') : ((idx < 0 || idx >= refArray.length) ? CLASSES.newException("java/lang/ArrayIndexOutOfBoundsException", idx) : null)
+        ex ? o.throw(ex) : (refArray[idx] = val)
     }
 
-    this.instanceof = done => {
-        var idx = this._read16();
-        var className = this._cp[this._cp[idx].name_index].bytes;
-        var obj = this._stack.pop();
-        if (obj.getClassName() === className) {
-            this._stack.push(true);
-        } else {
-            this._stack.push(false);
+INSTRUCTIONS.idiv = INSTRUCTIONS.ldiv = o => {
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    (val1 === 0) ? o.throw(o.CLASSES.newException("java/lang/ArithmeticException")) : o.stack.push(val2 / val1)
+}
+
+INSTRUCTIONS.ddiv = INSTRUCTIONS.fdiv = o => {
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    o.stack.push(val2 / val1)
+}
+INSTRUCTIONS.irem = INSTRUCTIONS.lrem = INSTRUCTIONS.drem = INSTRUCTIONS.frem = o => {
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    o.stack.push(val2 % val1)
+}
+INSTRUCTIONS.ishl = INSTRUCTIONS.lshl = o => {
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    o.stack.push(val2 << val1)
+}
+INSTRUCTIONS.ishr = INSTRUCTIONS.lshr = o => {
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    o.stack.push(val2 >> val1)
+}
+INSTRUCTIONS.iushr = INSTRUCTIONS.lushr = o => {
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    o.stack.push(val2 >>> val1)
+}
+
+INSTRUCTIONS.fcmpl = INSTRUCTIONS.dcmpl = INSTRUCTIONS.fcmpg = INSTRUCTIONS.dcmpg = o => { //isNaN is 1 on the last 2 instructions
+    const val1 = o.stack.pop()
+    const val2 = o.stack.pop()
+    o.stack.push(isNaN(val1) || isNaN(val2) ? -1 : ((val2 > val1) ? 1 : ((val2 < val1) ? -1 : 0)))
+}
+
+const imports = {
+    Numeric: require('./util/numeric'),
+    Signature: require('./classfile/signature'),
+    TAGS: require('./classfile/tags')
+}
+
+module.exports = (classArea, method) => {
+    const constPool = classArea.getConstantPool()
+    const attr = method.attributes.filter(x => x.info.type === 'Code')[0]
+
+    const state = {
+        type: 'frame', //instanceof Replacement
+        code: attr.info.code,
+        exceptionTable: attr.info.exception_table,
+        pid: 0, //default main thread
+        ip: 0,
+        stack: [],
+        widened: false,
+        locals: Array(attr.info.max_locals),
+        constPool, CLASSES, //<---- TODO: fix
+        MAX_LOCALS: attr.info.max_locals,
+        ...imports,
+        read8: () => state.code[state.ip++],
+        read16: () => state.read8() << 8 | state.read8(),
+        read32: () => state.read16() << 16 | state.read16(),
+        stackPush: (...args) => args.forEach(state.stack.push),
+        throw: ex => { 
+            const exception = state.exceptionTable.filter(exception => state.ip >= exception.start_pc && state.ip <= exception.end_pc &&
+                (exception.catch_type === 0 || state.constPool[state.constPool[exception.catch_type].name_index].bytes === ex.getClassName()))[0]
+            if(exception && exception.handler_pc) {
+                state.stack.push(ex)
+                state.ip = exception.handler_pc
+            } else throw ex
+        },
+        run: args => {
+            state.locals = args.map(x => x)
+            const opCode = state.read8()
+            if(opCode === OPCODES.return) return
+            else if([OPCODES.ireturn, OPCODES.lreturn, OPCODES.freturn, OPCODES.dreturn, OPCODES.areturn].includes(opCode)) return state.stack.pop()
+            else {
+                const opName = OPCODES.toString(opCode)                    
+                if (!(opName in INSTRUCTIONS)) throw new Error(`Opcode ${opName} [${opCode}] is not supported.`)
+                INSTRUCTIONS[opName](state)
+            }
         }
-        return done();
     }
-
-    this.checkcast = done => {
-        var idx = this._read16();
-        var type = this._cp[this._cp[idx].name_index].bytes;
-        return done();
-    }
-
-
-    this.athrow = done => {
-        this._throw(this._stack.pop());
-        return done();
-    }
-
-    this.wide = done => {
-        this._widened = true;
-        return done();
-    }
-
-    this.monitorenter = done => {
-        var obj = this._stack.pop();
-        if (!obj) {
-            this._throw(CLASSES.newException("java/lang/NullPointerException"));
-        } else if (obj.hasOwnProperty("$lock$")) {
-            this._stack.push(obj);
-            this._ip--;
-            SCHEDULER.yield();
-        } else {
-            obj["$lock$"] = "locked";
-        }
-        return done();
-    }
-
-    this.monitorexit = done => {
-        var obj = this._stack.pop();
-        if (!obj) {
-            this._throw(CLASSES.newException("java/lang/NullPointerException"));
-        } else {
-            delete obj["$lock$"];
-            SCHEDULER.yield();
-        }
-        return done();
-    }
+    return state
 }
